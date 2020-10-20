@@ -13,18 +13,18 @@ gradient_clip_val=2.0
 wandb.init(name=dataset_names[FoodDataset], project=project_name,reinit=True)
 
 dm = DMLDataModule(
-    name=dataset_names[FoodDataset],
-    DataSetType=FoodDataset,
-    # root="/mnt/vol_b/images",
-    root="/mnt/vol_b/UPMC_Food101/images/",
-    classes=food_classes[::2],
-    eval_classes=food_classes[1::2],
+    # name=dataset_names[FoodDataset],
+    # DataSetType=FoodDataset,
+    # # root="/mnt/vol_b/images",
+    # root="/mnt/vol_b/UPMC_Food101/images/",
+    # classes=food_classes[::2],
+    # eval_classes=food_classes[1::2],
     
-    # name="Cars196",
-    # DataSetType=CarsDataset,
-    # root="/mnt/vol_b/cars",
-    # classes=range(0, 98),
-    # eval_classes=range(98, 196),
+    name="Cars196",
+    DataSetType=CarsDataset,
+    root="/mnt/vol_b/cars",
+    classes=range(0, 98),
+    eval_classes=range(98, 196),
 
     batch_size=batch_size,
     train_transform=make_transform_inception_v3(augment=True),
@@ -53,8 +53,10 @@ else:
         scaling_x=3.0,
         scaling_p=3.0,
         smoothing_const=0.1,
+        percentage_unlabelled=0.2,
         vis_dim=(2,3),
-        batch_size=batch_size
+        batch_size=batch_size,
+        max_3d_points_per_class=50 # This is just a visualization parameter. Be careful - if it's too large WandB console slows down.
     )
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 lr_logger = LearningRateMonitor(logging_interval='step')

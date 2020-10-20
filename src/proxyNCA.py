@@ -192,29 +192,36 @@ class DML(pl.LightningModule):
         x = self.embedding_layer(x)
         return x
 
-    def compute_loss(self, images, target, include_embeddings=False, drop_labels=False)->Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def compute_loss(self, images, target, include_embeddings=False)->Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         X = self(images)
         P = F.normalize(self.proxies, p = 2, dim = -1) * self.hparams.scaling_p
         X = F.normalize(X, p = 2, dim = -1) * self.hparams.scaling_x
         D = torch.cdist(X, P) ** 2
-        if drop_labels or True:
-            # Simple implementation of see section X of report.
-            #  Assume one in every 8 samples is labelled.
+        # if drop_labels or True:
+        #     # Simple implementation of see section X of report.
+        #     #  Assume one in every 8 samples is labelled.
         
-            tk=D.topk(k=1, largest=False)
-            new_target=[]
-            for i, t in enumerate(target):
-                # Assume 7 in 8 samples has no label. TODO: Move this logic to the dataloader
-                if random.choices([True, True, True, True, True, True, True,False]):
-                    new_target.append(tk.indices[i].item())
-                else:
-                    new_target.append(t.item())
-            target = np.array(new_target)
-        else:
-            target = target.cpu().numpy()
+        #     breakpoint()
+        #     new_target=[]
+        #     for i, t in enumerate(target):
+        #         # Assume 7 in 8 samples has no label. TODO: Move this logic to the dataloader
+        #         if random.choices([True, True, True, True, True, True, True,False]):
+        #             new_target.append(tk.indices[i].item())
+        #         else:
+        #             new_target.append(t.item())
+        #     target = np.array(new_target)
+        # else:
+        target = target.cpu().numpy()
 
         T = binarize_and_smooth_labels(target, len(P), self.hparams.smoothing_const).to(X.device)
-        
+        if self.hparams.percentage_unlabelled:
+            # For 3 nearest neighbors
+            tk=D.topk(k=3, largest=False)
+            # Randomly replace `percentage_unlabelled` samples with knn assumed labels.
+            perm = torch.randperm(tk.indices.size(0))
+            samples_to_delabel=perm[:int(len(tk.indices)*self.hparams.percentage_unlabelled)]
+            # Weight the binarized smooth labels proportional to the inverse of the distance
+            T[samples_to_delabel][0,tk.indices[samples_to_delabel][:]] += 1.0/(tk.values[samples_to_delabel]/tk.values[samples_to_delabel].sum(dim=1).unsqueeze(-1))
         # note that compared to proxy nca, positive included in denominator
         loss = torch.sum(-T * F.log_softmax(-D, -1), -1)
         if include_embeddings:
@@ -291,7 +298,7 @@ class DML(pl.LightningModule):
                 x_s = [o for i, o in enumerate(projected[:, 0]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
                 y_s = [o for i, o in enumerate(projected[:, 1]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
                 marker_color =colors_by_name[cls_idx%len(colors_by_name)]
-                fig_embedded_data.add_scatter(x=x_s, y=y_s, marker_color=marker_color, text=cls_name, name=cls_name, mode="markers")
+                fig_embedded_data.add_scattergl(x=x_s, y=y_s, marker_color=marker_color, text=cls_name, name=cls_name, mode="markers")
 
                                     
             wandb.log({"Embedding of Validation Dataset 2D": fig_embedded_data})
@@ -302,7 +309,7 @@ class DML(pl.LightningModule):
                 x_s = [o for i, o in enumerate(proxies[:, 0]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
                 y_s = [o for i, o in enumerate(proxies[:, 1]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
                 marker_color =colors_by_name[self.val_dataset.classes.index(cls_name)%len(colors_by_name)]
-                fig_embedded_proxies.add_scatter(x=[x_y[0]], y=[x_y[1]], marker_color=marker_color, text=cls_name, name=cls_name, mode="markers")
+                fig_embedded_proxies.add_scattergl(x=[x_y[0]], y=[x_y[1]], marker_color=marker_color, text=cls_name, name=cls_name, mode="markers")
             wandb.log({"Embedding of Proxies (on validation data) 2D": fig_embedded_proxies})
             
         if 3 in self.hparams.vis_dim:
@@ -315,8 +322,9 @@ class DML(pl.LightningModule):
                 x_s = [o for i, o in enumerate(projected[:, 0]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
                 y_s = [o for i, o in enumerate(projected[:, 1]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
                 z_s = [o for i, o in enumerate(projected[:, 2]) if  self.val_dataset.get_label_description(Y[i,0])==cls_name]
+                max_3d_points_per_class = min(self.hparams.max_3d_points_per_class, len(x_s))
                 marker_color =colors_by_name[cls_idx%len(colors_by_name)]
-                fig_embedded_data.add_scatter3d(x=x_s, y=y_s,z=z_s, marker_color=marker_color, text=cls_name, name=cls_name, mode="markers")
+                fig_embedded_data.add_scatter3d(x=x_s[:max_3d_points_per_class], y=y_s[:max_3d_points_per_class],z=z_s[:max_3d_points_per_class], marker_color=marker_color, text=cls_name, name=cls_name, mode="markers")
             wandb.log({"Embedding of Validation Dataset 3D": fig_embedded_data})
             fig_embedded_proxies = go.Figure()
             for cls_name, x_y_z in zip(self.val_dataset.classes, proxies):
@@ -372,7 +380,7 @@ class DML(pl.LightningModule):
             ],
         )
 
-        scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.94)
-        # scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.hparams.lr)
+        # scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.94)
+        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.hparams.lr)
 
         return [optimizer], [scheduler]

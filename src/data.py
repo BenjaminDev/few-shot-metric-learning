@@ -54,15 +54,15 @@ class DMLDataModule(pl.LightningDataModule):
             root=self.root, classes=self.eval_classes, transform=self.eval_transform
         )
 
-        def plot_class_distributions(ys, classes):
-            import plotly.graph_objects as go
-            labels, counts = zip(*Counter(ys).items())
-            labels=[classes[o] for o in labels]
-            fig = go.Figure([go.Bar(x=labels, y=counts)])
-            return fig
-        wandb.init(name=self.name, project=project_name, reinit=True)
-        wandb.log({"Validation Class Distribution": plot_class_distributions(ys=self.val_dataset.ys, classes=self.val_dataset.classes)})
-        wandb.log({"Train Class Distribution": plot_class_distributions(ys=self.train_dataset.ys, classes=self.train_dataset.classes)})
+        # def plot_class_distributions(ys, classes):
+        #     import plotly.graph_objects as go
+        #     labels, counts = zip(*Counter(ys).items())
+        #     labels=[classes[o] for o in labels]
+        #     fig = go.Figure([go.Bar(x=labels, y=counts)])
+        #     return fig
+        # wandb.init(name=self.name, project=project_name, reinit=True)
+        # wandb.log({"Validation Class Distribution": plot_class_distributions(ys=self.val_dataset.ys, classes=self.val_dataset.classes)})
+        # wandb.log({"Train Class Distribution": plot_class_distributions(ys=self.train_dataset.ys, classes=self.train_dataset.classes)})
 
     def train_dataloader(self):
         return DataLoader(
